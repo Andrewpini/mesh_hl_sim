@@ -36,13 +36,13 @@ class TestResults(object):
 		for _ in range(4):
 			self.write_adv_bearer([])
 
-		self.write_adv_bearer(["Node", "Timestamp last msg",
+		self.write_adv_bearer(["Node", "Nr links", "Tot loss chance", "Timestamp last msg",
                          "Packets recived", "Packets lost", "Packet loss %"])
 
 		for item in res_list:
-			packet_loss = msg_cnt - item[2]
+			packet_loss = msg_cnt - item[4]
 			packet_loss_perc = packet_loss / msg_cnt * 100
 			self.write_adv_bearer(
-				[item[0], item[1], item[2], packet_loss, packet_loss_perc])
+				[item[0], item[1], item[2], item[3], item[4], packet_loss, packet_loss_perc])
 
 
