@@ -94,9 +94,9 @@ class MeshNode(object):
 
 	def set_self_noice(self):
 		cnt = len(self.adjecent_nodes)
-		if cnt > 1:
-			self.self_noice = 1 + pow(0.7*(cnt - 1), 2.4)
-		self.total_loss_chance = self.self_noice + self.uniform_noice
+		if cnt > 0:
+			self.total_loss_chance = (
+				1 - (pow(1 - IS_SENDING_PROB, cnt))) * 100 + self.uniform_noice
 
 
 	def start_dfu(self, n_bytes):
@@ -135,6 +135,7 @@ class MeshNode(object):
 		return dfu_msg_cnt
 
 	def advertise_message(self, tid, timestamp):
+		print("Node {} Advertising. Tid: {}, Time: {}".format(self.name, tid, timestamp))
 		temp_timestamp = timestamp
 		for _ in range(self.retransmit):
 			temp_timestamp += ADV_TIME
@@ -367,15 +368,15 @@ x = MeshNetwork(1, uniform_noice=10,
 # x.load_noice_csv("nice_test")
 
 # x.initiate_dfu_gatt(0, 150000, 10)
-# x.initiate_dfu(0, 150000, 10)
+x.initiate_dfu(0, 33, 1)
 
-def test(i):
-	return min(100, 0.7 + pow(.9*(i - 1), 2.4))
-prev = 0
-for i in range(1,100):
-#     print("Adj nodes: {}, loss chance: {:.2f}%".format(i, test(i)))
-#     print("Adj nodes: {}, loss chance: {}".format(i, pow(1.7,i)))
-	curr = (pow(.985,i)) * 100
-	# print("Diff: {}".format(prev - curr))
-	print("Adj nodes: {}, loss chance: {}".format(i, curr))
-	prev = curr
+# def test(i):
+# 	return min(100, 0.7 + pow(.9*(i - 1), 2.4))
+# prev = 0
+# for i in range(1,30):
+# #     print("Adj nodes: {}, loss chance: {:.2f}%".format(i, test(i)))
+# #     print("Adj nodes: {}, loss chance: {}".format(i, pow(1.7,i)))
+# 	curr = (1 - (pow(.985,i))) * 100
+# 	# print("Diff: {}".format(prev - curr))
+# 	print("Adj nodes: {}, loss chance: {}".format(i, curr))
+# 	prev = curr
