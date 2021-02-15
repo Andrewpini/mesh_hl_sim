@@ -14,6 +14,9 @@ ADV_TIME = 25
 
 MSG_PAYLOAD_SIZE = 11
 
+# (47 bytes * 8 bit/byte * 1us/bit) / 25ms (interval+delay)
+IS_SENDING_PROB = 0.01504
+
 def create_network_csv(nodes, edges, file_name):
 
 	G = nx.barabasi_albert_graph(nodes, edges)
@@ -164,7 +167,7 @@ class MeshNode(object):
 		self.msg_cache.append(entry)
 
 	def start_receive_adv_msg(self, tid, timestamp):
-		if self.was_msg_recieved(self.uniform_noice + self.self_noice):
+		if self.was_msg_recieved(self.total_loss_chance):
 
 			if tid in self.msg_cache:
 				return True
@@ -179,7 +182,7 @@ class MeshNode(object):
 		return False
 
 	def start_receive_gatt_msg(self, tid, timestamp):
-		if self.was_msg_recieved(self.uniform_noice + self.self_noice):
+		if self.was_msg_recieved(self.total_loss_chance):
 
 			if tid in self.msg_cache:
 				return True
@@ -199,6 +202,12 @@ class MeshNode(object):
 
 	def print_result(self):
 		return [self.name, len(self.adjecent_nodes), self.total_loss_chance, self.last_msg_timestamp, self.msg_approved]
+
+	def print_result2(self):
+		return [self.last_msg_timestamp, self.msg_approved]
+
+	def print_gen_info(self):
+		return [self.name, len(self.adjecent_nodes), self.total_loss_chance, ]
 
 
 class MeshNetwork(object):
@@ -220,29 +229,47 @@ class MeshNetwork(object):
 		self.create_edges()
 		self.calc_self_noice()
 
-	def initiate_dfu(self, origin_node, size):
+	def initiate_dfu(self, origin_node, size, test_cnt):
 		test_res = csv_test.TestResults()
-		self.msg_cnt = self.nodes_dict[origin_node].start_dfu(size)
+
 		self.res_list = []
+		res_dict = {}
+		for i in self.nodes_dict.values():
+			res_dict[i.name] = [0,0]
+
+		for _ in range(test_cnt):
+			self.msg_cnt = self.nodes_dict[origin_node].start_dfu(size)
+			for i in self.nodes_dict.values():
+				val = i.print_result2()
+				res_dict[i.name][0] += val[0]
+				res_dict[i.name][1] += val[1]
+			self.reset_nodes()
 
 		for i in self.nodes_dict.values():
-			self.res_list.append(i.print_result())
-		self.reset_nodes()
-
+			self.res_list.append(i.print_gen_info() + [i / test_cnt for i in res_dict[i.name]])
 		test_res.write_test_result(
 			origin_node, self.msg_cnt, self.uniform_noice, self.retransmit, self.res_list)
 
 		plt.savefig("./{}/Graph.pdf".format(test_res.dir_path), format="PDF")
 
-	def initiate_dfu_gatt(self, origin_node, size):
+	def initiate_dfu_gatt(self, origin_node, size, test_cnt):
 		test_res = csv_test.TestResults()
-		self.msg_cnt = self.nodes_dict[origin_node].start_dfu_gatt(size)
+
 		self.res_list = []
+		res_dict = {}
+		for i in self.nodes_dict.values():
+			res_dict[i.name] = [0,0]
+
+		for _ in range(test_cnt):
+			self.msg_cnt = self.nodes_dict[origin_node].start_dfu_gatt(size)
+			for i in self.nodes_dict.values():
+				val = i.print_result2()
+				res_dict[i.name][0] += val[0]
+				res_dict[i.name][1] += val[1]
+			self.reset_nodes()
 
 		for i in self.nodes_dict.values():
-			self.res_list.append(i.print_result())
-		self.reset_nodes()
-
+			self.res_list.append(i.print_gen_info() + [i / test_cnt for i in res_dict[i.name]])
 		test_res.write_test_result(
 			origin_node, self.msg_cnt, self.uniform_noice, self.retransmit, self.res_list)
 
@@ -285,7 +312,7 @@ class MeshNetwork(object):
 			noice = next(reader)
 			i = 0
 			for item in noice:
-				self.nodes_dict[i].total_loss_chance = item
+				self.nodes_dict[i].total_loss_chance = eval(item)
 				i += 1
 
 
@@ -335,16 +362,20 @@ class MeshNetwork(object):
 
 
 x = MeshNetwork(1, uniform_noice=10,
-                retransmit=5, network_top="net_chain")
+                retransmit=3, network_top="net_3linkmax")
 
-x.load_noice_csv("nice_test")
+# x.load_noice_csv("nice_test")
 
-x.initiate_dfu_gatt(0, 150000)
-x.initiate_dfu(0, 150000)
+# x.initiate_dfu_gatt(0, 150000, 10)
+# x.initiate_dfu(0, 150000, 10)
 
-# def test(i):
-# 	return 1 + pow(.9*(i - 1), 2.4)
-
-# for i in range(2,20):
-#     print("Adj nodes: {}, loss chance: {}".format(i, test(i)))
-# #     print("Adj nodes: {}, loss chance: {}".format(i, pow(1.7,i)))
+def test(i):
+	return min(100, 0.7 + pow(.9*(i - 1), 2.4))
+prev = 0
+for i in range(1,100):
+#     print("Adj nodes: {}, loss chance: {:.2f}%".format(i, test(i)))
+#     print("Adj nodes: {}, loss chance: {}".format(i, pow(1.7,i)))
+	curr = (pow(.985,i)) * 100
+	# print("Diff: {}".format(prev - curr))
+	print("Adj nodes: {}, loss chance: {}".format(i, curr))
+	prev = curr
