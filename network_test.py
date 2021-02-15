@@ -7,6 +7,8 @@ import csv
 
 import csv_test
 
+from operator import itemgetter
+
 REGULAR_NODE = 0
 RELAY_NODE = 1
 
@@ -87,10 +89,20 @@ class MeshNode(object):
 		self.last_msg_timestamp = 0
 		self.retransmit = retransmit
 
+
+
+		self.adv_queue = []
+		self.incoming_msg_queue = []
+		self.nxt_adv_packet = None
+		self.is_dfu_origin = False
+		self.pending_update = False
+
 	def reset_node(self):
 		self.msg_cache = []
 		self.msg_approved = 0
 		self.last_msg_timestamp = 0
+		self.is_dfu_origin = False
+		self.pending_update = False
 
 	def set_self_noice(self):
 		cnt = len(self.adjecent_nodes)
@@ -100,21 +112,20 @@ class MeshNode(object):
 
 
 	def start_dfu(self, n_bytes):
+		self.is_dfu_origin = True
 		dfu_msg_cnt = math.ceil(n_bytes / MSG_PAYLOAD_SIZE)
-		timestamp = 0
-		# start = time.time()
+		# timestamp = 0
+
 		for i in range(1, dfu_msg_cnt + 1):
-			if i % 100 is 0:
-				print(i)
-			self.add_cache_entry(i)
+			for _ in range(self.retransmit):
+				self.adv_queue.append(i)
 			self.msg_approved += 1
-			if timestamp > self.last_msg_timestamp:
-				self.last_msg_timestamp = timestamp
-			timestamp = self.advertise_message(i, timestamp)
-			# timestamp += 75
-		# print("Messages sent: {}, Time expired: {}".format(dfu_msg_cnt, timestamp))
-		# stop = time.time()
-		# print("Run took: {}".format(stop - start))
+
+		self.nxt_adv_packet = self.adv_queue.pop(0)
+
+		# if timestamp > self.last_msg_timestamp:
+		# 	self.last_msg_timestamp = timestamp
+
 		return dfu_msg_cnt
 
 	def start_dfu_gatt(self, n_bytes):
@@ -134,14 +145,29 @@ class MeshNode(object):
 		# print("Run took: {}".format(stop - start))
 		return dfu_msg_cnt
 
-	def advertise_message(self, tid, timestamp):
-		print("Node {} Advertising. Tid: {}, Time: {}".format(self.name, tid, timestamp))
-		temp_timestamp = timestamp
-		for _ in range(self.retransmit):
-			temp_timestamp += ADV_TIME
-			for node in self.adjecent_nodes:
-				node.start_receive_adv_msg(tid, temp_timestamp)
-		return temp_timestamp
+	def update_adv_queue(self):
+		if self.pending_update:
+			self.adv_queue.extend(self.incoming_msg_queue)
+			self.incoming_msg_queue = []
+			self.pending_update = False
+
+
+	def advertise_nxt_message(self, time):
+		if time % 25 is not 0:
+			return True
+		try:
+			tid = self.adv_queue.pop(0)
+		except:
+			return False
+
+		if self.is_dfu_origin:
+			self.add_cache_entry(tid)
+			self.last_msg_timestamp = time
+
+		for node in self.adjecent_nodes:
+			node.start_receive_adv_msg(tid, time)
+		return True
+
 
 	def gatt_message_send(self, tid, timestamp):
 		temp_timestamp = timestamp
@@ -162,7 +188,7 @@ class MeshNode(object):
 			node.adjecent_nodes.append(self)
 
 	def add_cache_entry(self, entry):
-		if len(self.msg_cache) >= 10:
+		if len(self.msg_cache) >= 50:
 			self.msg_cache.pop(0)
 
 		self.msg_cache.append(entry)
@@ -171,16 +197,16 @@ class MeshNode(object):
 		if self.was_msg_recieved(self.total_loss_chance):
 
 			if tid in self.msg_cache:
-				return True
+				return
+			self.pending_update = True
+
 			self.add_cache_entry(tid)
 			self.msg_approved += 1
-			if timestamp > self.last_msg_timestamp:
-				self.last_msg_timestamp = timestamp
+			self.last_msg_timestamp = timestamp
 
-			self.advertise_message(tid, timestamp)
-			return True
-
-		return False
+			for _ in range(self.retransmit):
+				self.incoming_msg_queue.append(tid)
+			return
 
 	def start_receive_gatt_msg(self, tid, timestamp):
 		if self.was_msg_recieved(self.total_loss_chance):
@@ -242,6 +268,50 @@ class MeshNetwork(object):
 			self.msg_cnt = self.nodes_dict[origin_node].start_dfu(size)
 			for i in self.nodes_dict.values():
 				val = i.print_result2()
+				res_dict[i.name][0] += val[0]
+				res_dict[i.name][1] += val[1]
+			self.reset_nodes()
+
+		for i in self.nodes_dict.values():
+			self.res_list.append(i.print_gen_info() + [i / test_cnt for i in res_dict[i.name]])
+		test_res.write_test_result(
+			origin_node, self.msg_cnt, self.uniform_noice, self.retransmit, self.res_list)
+
+		plt.savefig("./{}/Graph.pdf".format(test_res.dir_path), format="PDF")
+
+	def adv_dfu_initiate(self, origin_node, size, test_cnt):
+		test_res = csv_test.TestResults()
+
+		self.res_list = []
+		res_dict = {}
+		for i in self.nodes_dict.values():
+			res_dict[i.name] = [0,0]
+
+		for _ in range(test_cnt):
+			self.msg_cnt = self.nodes_dict[origin_node].start_dfu(size)
+
+			test = True
+			time = 0
+			while test:
+				test = False
+
+				for i in self.nodes_dict.values():
+					test |= i.advertise_nxt_message(time)
+
+				for i in self.nodes_dict.values():
+					i.update_adv_queue()
+				time += 1
+				# test |= a.advertise_nxt_message(time)
+				# # test |= b.advertise_nxt_message(time)
+				# # test |= c.advertise_nxt_message(time)
+				# a.update_adv_queue()
+				# # b.update_adv_queue()
+				# # c.update_adv_queue()
+				# # time += 25
+
+			for i in self.nodes_dict.values():
+				val = i.print_result2()
+				print(val)
 				res_dict[i.name][0] += val[0]
 				res_dict[i.name][1] += val[1]
 			self.reset_nodes()
@@ -343,15 +413,39 @@ class MeshNetwork(object):
 # create_network_csv(8, 2, "net2")
 
 
-# a = MeshNode(0, 50, 1)
-# b = MeshNode(1, 50, 1)
-# c = MeshNode(2, 50, 1)
-# d = MeshNode(3, 50, 1)
-# e = MeshNode(4, 50, 1)
-# f = MeshNode(5, 50, 1)
+# a = MeshNode(0, 0, 3)
+# b = MeshNode(1, 0, 3)
+# c = MeshNode(2, 0, 3)
+# # d = MeshNode(3, 50, 1)
+# # e = MeshNode(4, 50, 1)
+# # f = MeshNode(5, 50, 1)
 
 # b.add_neighbour_node(a)
 # c.add_neighbour_node(a)
+
+# a.start_dfu(150000)
+# # print(a.adv_queue)
+# # a.adv_queue.extend([0,1,2,3])
+# # for item in range(0,400000,25):
+# # 	a.advertise_nxt_message(item)
+
+# test = True
+# time = 0
+# while test:
+# 	test = False
+# 	test |= a.advertise_nxt_message(time)
+# 	# test |= b.advertise_nxt_message(time)
+# 	# test |= c.advertise_nxt_message(time)
+# 	a.update_adv_queue()
+# 	# b.update_adv_queue()
+# 	# c.update_adv_queue()
+# 	time += 25
+
+
+# print(b.adv_queue)
+# print(b.last_msg_timestamp)
+# print(b.msg_approved)
+
 # d.add_neighbour_node(a)
 # e.add_neighbour_node(a)
 # f.add_neighbour_node(a)
@@ -363,12 +457,12 @@ class MeshNetwork(object):
 
 
 x = MeshNetwork(1, uniform_noice=10,
-                retransmit=3, network_top="net_3linkmax")
+                retransmit=1, network_top="net_3linkmax")
 
 # x.load_noice_csv("nice_test")
 
 # x.initiate_dfu_gatt(0, 150000, 10)
-x.initiate_dfu(0, 33, 1)
+x.adv_dfu_initiate(0, 150000, 5)
 
 # def test(i):
 # 	return min(100, 0.7 + pow(.9*(i - 1), 2.4))
@@ -380,3 +474,12 @@ x.initiate_dfu(0, 33, 1)
 # 	# print("Diff: {}".format(prev - curr))
 # 	print("Adj nodes: {}, loss chance: {}".format(i, curr))
 # 	prev = curr
+
+# asd=[1,2,0]
+
+# for item in range(5):
+# 	if asd:
+# 		asd.pop(0)
+# 		print("pess")
+# 	else:
+# 		print("nei")
