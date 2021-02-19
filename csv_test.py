@@ -29,20 +29,27 @@ class TestResults(object):
 			writer.writerow(line)
 			file.close()
 
-	def write_test_result(self, origin_node, msg_cnt, packet_loss, retransmit, res_list):
+	def write_test_result(self, origin_node, msg_cnt, uniform_loss_chance, retransmit, res_dict):
 
-		self.write_adv_bearer(["Origin node", "Message count", "Packet loss chance in %", "Retransmition per relay"])
-		self.write_adv_bearer([origin_node, msg_cnt, packet_loss, retransmit])
+		self.write_adv_bearer(["Origin node", "Message count", "Uniform Packet loss chance in %", "Transmition per relay"])
+		self.write_adv_bearer([origin_node, msg_cnt, uniform_loss_chance, retransmit])
 		for _ in range(4):
 			self.write_adv_bearer([])
 
 		self.write_adv_bearer(["Node", "Nr links", "Tot loss chance", "Timestamp last msg",
                          "Packets recived", "Packets lost", "Packet loss %", "Peak Buffer size"])
 
-		for item in res_list:
-			packet_loss = msg_cnt - item[4]
+		for x, y in res_dict.items():
+			packet_loss = msg_cnt - y["msg_approved"]
 			packet_loss_perc = packet_loss / msg_cnt * 100
 			self.write_adv_bearer(
-				[item[0], item[1], item[2], item[3], item[4], packet_loss, packet_loss_perc, item[5]])
+				[x, y["link_cnt"], y["mean_noise"], y["last_ts"], y["msg_approved"], packet_loss, packet_loss_perc, y["peak_buf_size"]])
+
+
+		# for item in res_list:
+		# 	packet_loss = msg_cnt - item[4]
+		# 	packet_loss_perc = packet_loss / msg_cnt * 100
+		# 	self.write_adv_bearer(
+		# 		[item[0], item[1], item[2], item[3], item[4], packet_loss, packet_loss_perc, item[5]])
 
 
