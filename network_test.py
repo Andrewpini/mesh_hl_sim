@@ -4,6 +4,7 @@ import random
 import math
 import time
 import csv
+import time
 
 import csv_test
 
@@ -192,6 +193,54 @@ class MeshNode(object):
 			return True
 		return False
 
+	def start_dfu_gatt_2(self, n_bytes):
+		self.is_dfu_origin = True
+		dfu_msg_cnt = math.ceil(n_bytes / MSG_PAYLOAD_SIZE)
+		for i in range(1, dfu_msg_cnt + 1):
+
+			for node in self.adjecent_nodes:
+				self.adv_queue.append([node.name, i])
+			self.msg_approved += 1
+		return dfu_msg_cnt
+
+	def gatt_message_send_2(self, time):
+		if time % 20 is not 0:
+			return True
+		try:
+			entry = self.adv_queue.pop(0)
+		except:
+			return False
+		if self.is_dfu_origin:
+			self.gatt_cache_entry_add(entry[1])
+			self.msg_sent += 1
+			if self.msg_sent % 1000 is 0:
+				print(self.msg_sent)
+		for node in self.adjecent_nodes:
+			if node.name is entry[0]:
+				res = node.start_receive_gatt_msg_2(entry[1], time, self.name)
+				if not res:
+					self.adv_queue.insert(0, entry)
+		return True
+
+	def start_receive_gatt_msg_2(self, tid, timestamp, src):
+		if self.was_msg_recieved(self.total_loss_chance):
+			if self.is_dfu_origin:
+				return True
+			if tid in self.msg_cache:
+				return True
+			self.pending_update = True
+
+			self.gatt_cache_entry_add_2(tid)
+			self.msg_approved += 1
+			self.last_msg_timestamp = timestamp
+
+			for node in self.adjecent_nodes:
+				if node.name is src:
+					continue
+				self.incoming_msg_queue.append([node.name, tid])
+			return True
+		return False
+
 	def update_adv_queue(self):
 		if self.pending_update:
 			self.adv_queue.extend(self.incoming_msg_queue)
@@ -210,7 +259,12 @@ class MeshNode(object):
 		self.msg_cache.append(entry)
 
 	def gatt_cache_entry_add(self, entry):
-		if len(self.msg_cache) >= 500:
+		if len(self.msg_cache) >= 3000:
+			self.msg_cache.pop(0)
+		self.msg_cache.append(entry)
+
+	def gatt_cache_entry_add_2(self, entry):
+		if len(self.msg_cache) >= 100:
 			self.msg_cache.pop(0)
 		self.msg_cache.append(entry)
 
@@ -219,7 +273,7 @@ class MeshNode(object):
 		if cnt > 0:
 			self.total_loss_chance = (
 				1 - (pow(1 - IS_SENDING_PROB, cnt))) * 100 + self.uniform_noice
-			# self.total_loss_chance = 0
+			# self.total_loss_chance = 10
 
 	@staticmethod
 	def was_msg_recieved(loss_chance):
@@ -257,7 +311,7 @@ class MeshNetwork(object):
 		self.res_list = []
 		res_dict = {}
 		for i in self.nodes_dict.values():
-			res_dict[i.name] = [0,0]
+			res_dict[i.name] = [0,0,0]
 
 		for _ in range(test_cnt):
 			self.msg_cnt = self.nodes_dict[origin_node].start_dfu(size)
@@ -279,6 +333,7 @@ class MeshNetwork(object):
 				print(i.peak_buf_size)
 				res_dict[i.name][0] += val[0]
 				res_dict[i.name][1] += val[1]
+				res_dict[i.name][2] += i.peak_buf_size
 			self.reset_nodes()
 
 		for i in self.nodes_dict.values():
@@ -294,7 +349,7 @@ class MeshNetwork(object):
 		self.res_list = []
 		res_dict = {}
 		for i in self.nodes_dict.values():
-			res_dict[i.name] = [0,0]
+			res_dict[i.name] = [0,0,0]
 
 		for _ in range(test_cnt):
 			self.msg_cnt = self.nodes_dict[origin_node].start_dfu_gatt(size)
@@ -316,6 +371,45 @@ class MeshNetwork(object):
 				print("Node: {}, bufsize: {}".format(i.name, i.peak_buf_size))
 				res_dict[i.name][0] += val[0]
 				res_dict[i.name][1] += val[1]
+				res_dict[i.name][2] += i.peak_buf_size
+			self.reset_nodes()
+
+		for i in self.nodes_dict.values():
+			self.res_list.append(i.print_gen_info() + [i / test_cnt for i in res_dict[i.name]])
+		test_res.write_test_result(
+			origin_node, self.msg_cnt, self.uniform_noice, self.retransmit, self.res_list)
+
+		plt.savefig("./{}/Graph.pdf".format(test_res.dir_path), format="PDF")
+
+	def gatt_dfu_initiate_2(self, origin_node, size, test_cnt):
+		test_res = csv_test.TestResults()
+
+		self.res_list = []
+		res_dict = {}
+		for i in self.nodes_dict.values():
+			res_dict[i.name] = [0,0,0]
+
+		for _ in range(test_cnt):
+			self.msg_cnt = self.nodes_dict[origin_node].start_dfu_gatt_2(size)
+
+			test = True
+			time = 0
+			while test:
+				test = False
+
+				for i in self.nodes_dict.values():
+					test |= i.gatt_message_send_2(time)
+
+				for i in self.nodes_dict.values():
+					i.update_adv_queue()
+				time += 20
+
+			for i in self.nodes_dict.values():
+				val = i.print_results()
+				print("Node: {}, bufsize: {}".format(i.name, i.peak_buf_size))
+				res_dict[i.name][0] += val[0]
+				res_dict[i.name][1] += val[1]
+				res_dict[i.name][2] += i.peak_buf_size
 			self.reset_nodes()
 
 		for i in self.nodes_dict.values():
@@ -442,13 +536,16 @@ class MeshNetwork(object):
 
 # x = MeshNetwork(1, uniform_noice=10,
 #                 retransmit=1, network_top="net_chain")
-x = MeshNetwork(1, uniform_noice=10,
-                retransmit=1, network_top="net_3linkmax")
+# x = MeshNetwork(1, uniform_noice=30,
+#                 retransmit=1, network_top="net_3linkmax")
+# x = MeshNetwork(1, uniform_noice=10,
+                # retransmit=1, network_top="test_del")
 
 # x.load_noice_csv("nice_test")
 
-x.gatt_dfu_initiate(0, 150000, 1)
-x.adv_dfu_initiate(0, 150000, 1)
+# x.gatt_dfu_initiate_2(0, 150000, 5)
+# x.gatt_dfu_initiate(0, 150000, 1)
+# x.adv_dfu_initiate(0, 150000, 1)
 
 # print("name: {}".format(x.nodes_dict[3].total_loss_chance))
 
@@ -475,3 +572,15 @@ x.adv_dfu_initiate(0, 150000, 1)
 # asd.insert(0,7)
 
 # print(asd)
+
+
+# asd = []
+
+# for item in range(40):
+# 	asd.append(0)
+
+# while True:
+# 	asd.pop(0)
+# 	asd.append(1)
+# 	print(sum(asd))
+# 	time.sleep(0.25)
