@@ -79,6 +79,7 @@ class MeshNode(object):
 		self.uniform_noice = uniform_noice / 100
 		self.total_loss_chance = uniform_noice / 100
 
+		self.adjacent_nodes = []
 		self.connected_nodes = []
 		self.msg_cache_list = []
 		self.msg_received = 0
@@ -228,10 +229,15 @@ class MeshNode(object):
 			self.peak_buf_size = max(self.peak_buf_size, math.ceil(
 				len(self.adv_queue) / max( (len(self.connected_nodes) - 1), 1)))
 
-	def add_neighbour_node(self, node):
+	def add_connected_node(self, node):
 		if node not in self.connected_nodes:
 			self.connected_nodes.append(node)
 			node.connected_nodes.append(self)
+
+	def add_adjacent_node(self, node):
+		if node not in self.adjacent_nodes:
+			self.adjacent_nodes.append(node)
+			node.adjacent_nodes.append(self)
 
 	def cache_entry_add(self, entry):
 		if len(self.msg_cache_list) >= 100:
@@ -240,7 +246,7 @@ class MeshNode(object):
 
 	def adv_was_msg_received(self, src):
 		temp = 1
-		for node in self.connected_nodes:
+		for node in self.adjacent_nodes:
 			if node.name is src:
 				continue
 			temp = temp * node.adv_self_noise_calc()
@@ -252,7 +258,7 @@ class MeshNode(object):
 
 	def gatt_was_msg_received(self, src):
 		temp = 1
-		for node in self.connected_nodes:
+		for node in self.adjacent_nodes:
 			if node.name is src:
 				continue
 			temp = temp * node.gatt_self_noise_calc()
@@ -263,15 +269,14 @@ class MeshNode(object):
 
 class MeshNetwork(object):
 
-	def __init__(self, node_cnt, uniform_noice, retransmit, network_top):
+	def __init__(self, node_cnt, uniform_noice, retransmit, network_conn_top, network_adj_top=None):
 		self.uniform_noice = uniform_noice
 		self.retransmit = retransmit
-
-		self.g = nx.Graph()
-		self.load_network_csv(network_top)
-
-
 		self.nodes_dict = {}
+
+		self.connection_network = nx.Graph()
+		self.adjacent_network = nx.Graph()
+		self.load_network_csv(network_conn_top, network_adj_top)
 		self.create_network()
 		self.create_edges()
 
@@ -311,7 +316,7 @@ class MeshNetwork(object):
 
 		for i in self.nodes_dict.values():
 			res_dict[i.name] = {"last_ts": 0, "msg_received": 0, "mean_noise": 0,
-                            "peak_buf_size": 0, "link_cnt": len(i.connected_nodes)}
+                            "peak_buf_size": 0, "link_cnt": len(i.adjacent_nodes)}
 
 		for _ in range(test_cnt):
 			if is_adv_bearer:
@@ -338,30 +343,49 @@ class MeshNetwork(object):
 		print("\nDFU simulation complete\n")
 
 	def create_network(self):
-		for i in self.g.nodes:
+		for i in self.connection_network.nodes:
 			self.nodes_dict[i] = MeshNode(
 				i, self.uniform_noice, self.retransmit)
 
 	def create_edges(self):
-		for i in self.g.edges:
-			self.nodes_dict[i[0]].add_neighbour_node(self.nodes_dict[i[1]])
+		for i in self.connection_network.edges:
+			self.nodes_dict[i[0]].add_connected_node(self.nodes_dict[i[1]])
+		for j in self.adjacent_network.edges:
+			self.nodes_dict[j[0]].add_adjacent_node(self.nodes_dict[j[1]])
+
 		plt.clf()
-		nx.draw_spring(self.g, with_labels=1)
+		nx.draw_spring(self.connection_network, with_labels=1)
 
 	def reset_nodes(self):
 		for i in self.nodes_dict.values():
 			i.reset_node()
 
-	def load_network_csv(self, file_name):
-		with open('./network_struct_cvs/{}.csv'.format(file_name), 'r') as file:
-			reader = csv.reader(file)
+	def load_network_csv(self, conn_file_name, adj_file_name):
+		with open('./network_struct_cvs/{}.csv'.format(conn_file_name), 'r') as conn_file:
+			reader = csv.reader(conn_file)
 
-			nodes = next(reader)
-			for i in nodes:
-				self.g.add_node(eval(i))
-			edges = next(reader)
-			for item in edges:
-				self.g.add_edge(*eval(item))
+			conn_nodes = next(reader)
+			for i in conn_nodes:
+				self.connection_network.add_node(eval(i))
+			conn_edges = next(reader)
+			for j in conn_edges:
+				self.connection_network.add_edge(*eval(j))
+
+		if not adj_file_name:
+			for i in conn_nodes:
+				self.adjacent_network.add_node(eval(i))
+			for j in conn_edges:
+				self.adjacent_network.add_edge(*eval(j))
+		else:
+			with open('./network_struct_cvs/{}.csv'.format(adj_file_name), 'r') as adj_file:
+				reader = csv.reader(adj_file)
+
+				adj_nodes = next(reader)
+				for i in adj_nodes:
+					self.adjacent_network.add_node(eval(i))
+				adj_edges = next(reader)
+				for j in adj_edges:
+					self.adjacent_network.add_edge(*eval(j))
 
 	def load_noice_csv(self, file_name):
 		with open('./network_struct_cvs/{}.csv'.format(file_name), 'r') as file:
@@ -375,11 +399,17 @@ class MeshNetwork(object):
 
 
 # a = MeshNode(0, 0, 1)
-# b.add_neighbour_node(a)
+# b.add_connected_node(a)
 # x.load_noice_csv("nice_test")
 
 x = MeshNetwork(1, uniform_noice=10,
-                retransmit=3, network_top="test_del")
+                retransmit=3, network_conn_top="test_del")
 
 x.gatt_dfu_initiate(0, 150000, 1)
+
+y = MeshNetwork(1, uniform_noice=10,
+                retransmit=3, network_conn_top="test_del", network_adj_top="net_3linkmax")
+
+y.gatt_dfu_initiate(0, 150000, 1)
+
 # x.adv_dfu_initiate(0, 150000, 1)
