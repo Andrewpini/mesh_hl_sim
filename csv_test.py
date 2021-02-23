@@ -36,14 +36,14 @@ class TestResults(object):
 		for _ in range(4):
 			self.write_adv_bearer([])
 
-		self.write_adv_bearer(["Node", "Nr links", "Tot loss chance", "Timestamp last msg",
+		self.write_adv_bearer(["Node", "Nr links", "Nr adjacent node", "Tot loss chance", "Timestamp last msg",
                          "Packets recived", "Packets lost", "Packet loss %", "Peak Buffer size"])
 
 		for x, y in res_dict.items():
 			packet_loss = msg_cnt - y["msg_received"]
 			packet_loss_perc = packet_loss / msg_cnt * 100
 			self.write_adv_bearer(
-				[x, y["link_cnt"], y["mean_noise"], y["last_ts"], y["msg_received"], packet_loss, packet_loss_perc, y["peak_buf_size"]])
+				[x, y["link_cnt"], y["adj_cnt"], y["mean_noise"], y["last_ts"], y["msg_received"], packet_loss, packet_loss_perc, y["peak_buf_size"]])
 
 
 		# for item in res_list:

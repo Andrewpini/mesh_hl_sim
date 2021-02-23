@@ -316,7 +316,7 @@ class MeshNetwork(object):
 
 		for i in self.nodes_dict.values():
 			res_dict[i.name] = {"last_ts": 0, "msg_received": 0, "mean_noise": 0,
-                            "peak_buf_size": 0, "link_cnt": len(i.adjacent_nodes)}
+                            "peak_buf_size": 0, "link_cnt": len(i.connected_nodes), "adj_cnt": len(i.adjacent_nodes)}
 
 		for _ in range(test_cnt):
 			if is_adv_bearer:
