@@ -97,6 +97,9 @@ class MeshNode(object):
 			0 for i in range(int(MS_PER_SEC/GATT_INTERVAL_MS))]
 		self.mean_loss_chance = self.uniform_noice
 
+		self.max_buf_size = None
+		self.disable_internal_noise = False
+
 	def reset_node(self):
 		self.msg_cache_list = []
 		self.msg_received = 0
@@ -131,6 +134,7 @@ class MeshNode(object):
 
 		if self.is_dfu_origin:
 			self.cache_entry_add(tid)
+			self.last_msg_timestamp = time
 
 		self.adv_sent_update(1)
 		for node in self.connected_nodes:
@@ -142,8 +146,11 @@ class MeshNode(object):
 
 			if tid in self.msg_cache_list:
 				return
-			self.pending_update = True
 
+			if self.max_buf_size and (math.ceil(len(self.adv_queue) / self.retransmit)) >= self.max_buf_size:
+			    return
+
+			self.pending_update = True
 			self.cache_entry_add(tid)
 			self.msg_received += 1
 			self.last_msg_timestamp = timestamp
@@ -171,6 +178,7 @@ class MeshNode(object):
 			return False
 		if self.is_dfu_origin:
 			self.cache_entry_add(entry[1])
+			self.last_msg_timestamp = time
 
 		self.gatt_sent_update(1)
 		for node in self.connected_nodes:
@@ -186,6 +194,11 @@ class MeshNode(object):
 				return True
 			if tid in self.msg_cache_list:
 				return True
+
+			if self.max_buf_size and (math.ceil(
+				len(self.adv_queue) / max( (len(self.connected_nodes) - 1), 1)) >= self.max_buf_size):
+			    return False
+
 			self.pending_update = True
 
 			self.cache_entry_add(tid)
@@ -208,9 +221,14 @@ class MeshNode(object):
 		self.gatt_msg_sent_list.append(gatt)
 
 	def adv_self_noise_calc(self):
+		if self.disable_internal_noise:
+		    return 1
+
 		return 1 - sum(self.adv_msg_sent_list) * PACKET_ON_AIR_TIME_US / US_PER_SEC
 
 	def gatt_self_noise_calc(self):
+		if self.disable_internal_noise:
+		    return 1
 		return 1 - sum(self.gatt_msg_sent_list) * PACKET_ON_AIR_TIME_US / US_PER_SEC / GATT_CHN_CNT
 
 	def adv_queue_update(self):
@@ -228,6 +246,7 @@ class MeshNode(object):
 			self.pending_update = False
 			self.peak_buf_size = max(self.peak_buf_size, math.ceil(
 				len(self.adv_queue) / max( (len(self.connected_nodes) - 1), 1)))
+
 
 	def add_connected_node(self, node):
 		if node not in self.connected_nodes:
@@ -269,7 +288,7 @@ class MeshNode(object):
 
 class MeshNetwork(object):
 
-	def __init__(self, node_cnt, uniform_noice, retransmit, network_conn_top, network_adj_top=None):
+	def __init__(self, uniform_noice, retransmit, network_conn_top, network_adj_top=None):
 		self.uniform_noice = uniform_noice
 		self.retransmit = retransmit
 		self.nodes_dict = {}
@@ -280,16 +299,18 @@ class MeshNetwork(object):
 		self.create_network()
 		self.create_edges()
 
-	def adv_dfu_initiate(self, origin_node, size, test_cnt):
-		self._dfu_initiate(origin_node, size, test_cnt, is_adv_bearer=True)
+	def adv_dfu_initiate(self, test_name, origin_node, size, test_cnt):
+		self._dfu_initiate(origin_node, size, test_cnt, "{}_ADVx{}".format(
+			test_name, self.retransmit), is_adv_bearer=True)
 
-	def gatt_dfu_initiate(self, origin_node, size, test_cnt):
-		self._dfu_initiate(origin_node, size, test_cnt, is_adv_bearer=False)
+	def gatt_dfu_initiate(self, test_name, origin_node, size, test_cnt):
+		self._dfu_initiate(origin_node, size, test_cnt,
+		                   "{}_GATT".format(test_name), is_adv_bearer=False)
 
 	def _gatt_dfu_run(self, origin_node, size):
 		self.msg_cnt = self.nodes_dict[origin_node].gatt_dfu_start(size)
 		test = True
-		time = 0
+		time = GATT_INTERVAL_MS
 		while test:
 			test = False
 			for i in self.nodes_dict.values():
@@ -301,7 +322,7 @@ class MeshNetwork(object):
 	def _adv_dfu_run(self, origin_node, size):
 		self.msg_cnt = self.nodes_dict[origin_node].adv_dfu_start(size)
 		test = True
-		time = 0
+		time = ADV_INTERVAL_MS
 		while test:
 			test = False
 			for i in self.nodes_dict.values():
@@ -310,15 +331,15 @@ class MeshNetwork(object):
 				i.adv_queue_update()
 			time += ADV_INTERVAL_MS
 
-	def _dfu_initiate(self, origin_node, size, test_cnt, is_adv_bearer):
-		test_res = csv_test.TestResults()
+	def _dfu_initiate(self, origin_node, size, test_cnt, test_name, is_adv_bearer):
+		test_res = csv_test.TestResults(test_name)
 		res_dict = {}
 
 		for i in self.nodes_dict.values():
 			res_dict[i.name] = {"last_ts": 0, "msg_received": 0, "mean_noise": 0,
                             "peak_buf_size": 0, "link_cnt": len(i.connected_nodes), "adj_cnt": len(i.adjacent_nodes)}
 
-		for _ in range(test_cnt):
+		for j in range(test_cnt):
 			if is_adv_bearer:
 				self._adv_dfu_run(origin_node, size)
 			else:
@@ -330,6 +351,7 @@ class MeshNetwork(object):
 				res_dict[i.name]["mean_noise"] += i.mean_loss_chance * 100
 				res_dict[i.name]["peak_buf_size"] = max(
 					i.peak_buf_size, res_dict[i.name]["peak_buf_size"])
+			print("{} simulation done".format(j))
 			self.reset_nodes()
 
 		for i in res_dict.values():
@@ -359,6 +381,14 @@ class MeshNetwork(object):
 	def reset_nodes(self):
 		for i in self.nodes_dict.values():
 			i.reset_node()
+
+	def buf_max_set(self, val):
+		for i in self.nodes_dict.values():
+			i.max_buf_size = val
+
+	def internal_noise_disable(self, is_true):
+		for i in self.nodes_dict.values():
+			i.disable_internal_noise = is_true
 
 	def load_network_csv(self, conn_file_name, adj_file_name):
 		with open('./network_struct_cvs/{}.csv'.format(conn_file_name), 'r') as conn_file:
@@ -402,14 +432,94 @@ class MeshNetwork(object):
 # b.add_connected_node(a)
 # x.load_noice_csv("nice_test")
 
-x = MeshNetwork(1, uniform_noice=10,
-                retransmit=3, network_conn_top="test_del")
+## Used to generate final data:
+# for i in range(1, 5 + 1):
+# 	x = MeshNetwork(uniform_noice=10,
+# 			retransmit=i, network_conn_top="net_3linkmax")
+# 	x.buf_max_set(64)
+# 	x.adv_dfu_initiate("net_3linkmax", 0, 150000, 100)
 
-x.gatt_dfu_initiate(0, 150000, 1)
+## Used to generate final data:
+# x = MeshNetwork(uniform_noice=10,
+# 		retransmit=1, network_conn_top="net_3linkmax")
+# x.buf_max_set(64)
+# x.gatt_dfu_initiate("net_3linkmax", 0, 150000, 100)
 
-y = MeshNetwork(1, uniform_noice=10,
-                retransmit=3, network_conn_top="test_del", network_adj_top="net_3linkmax")
+# ## Used to generate final data:
+# x = MeshNetwork(uniform_noice=10,
+#                 retransmit=4, network_conn_top="net_3linkmax_broken")
+# x.buf_max_set(64)
+# x.adv_dfu_initiate("net_3linkmax_broken", 0, 150000, 100)
+# x.gatt_dfu_initiate("net_3linkmax_broken", 0, 150000, 100)
 
-y.gatt_dfu_initiate(0, 150000, 1)
+# ## Used to generate final data:
+# x = MeshNetwork(uniform_noice=10,
+#                 retransmit=3, network_conn_top="net_broken_tree", network_adj_top="net_3linkmax_broken")
+# x.buf_max_set(16)
+# x.gatt_dfu_initiate("net_broken_tree", 0, 150000, 100)
 
-# x.adv_dfu_initiate(0, 150000, 1)
+# ## Used to generate final data:
+# x = MeshNetwork(uniform_noice=10,
+#                 retransmit=3, network_conn_top="net_broken_snake", network_adj_top="net_3linkmax_broken")
+# x.buf_max_set(16)
+# x.gatt_dfu_initiate("net_broken_snake", 0, 150000, 100)
+
+# ## Used to generate final data:
+# for i in range(1, 7 + 1):
+# 	x = MeshNetwork(uniform_noice=10,
+# 			retransmit=i, network_conn_top="net_adv_chain_sample")
+# 	x.buf_max_set(16)
+# 	x.internal_noise_disable(True)
+# 	x.adv_dfu_initiate("net_adv_chain_sample", 0, 150000, 100)
+
+# ## Used to generate final data:
+# x = MeshNetwork(uniform_noice=10,
+#                 retransmit=4, network_conn_top="net_3linkmax_broken")
+# x.buf_max_set(64)
+# x.internal_noise_disable(False)
+# x.adv_dfu_initiate("net_3linkmax_broken", 12, 150000, 1000)
+
+# ## Used to generate final data:
+# for i in range(1, 7 + 1):
+# 	x = MeshNetwork(uniform_noice=10,
+# 			retransmit=i, network_conn_top="net_adv_triangle_sample")
+# 	x.buf_max_set(16)
+# 	x.internal_noise_disable(True)
+# 	x.nodes_dict[1].uniform_noice = 0
+# 	x.nodes_dict[1].total_loss_chance = 0
+# 	x.adv_dfu_initiate("net_adv_triangle_sample", 0, 150000, 100)
+
+# ## Used to generate final data:
+# x = MeshNetwork(uniform_noice=10,
+#                 retransmit=3, network_conn_top="net_broken_tree", network_adj_top="net_3linkmax_broken")
+# x.internal_noise_disable(True)
+# x.buf_max_set(256)
+# x.gatt_dfu_initiate("net_broken_tree_no_buf_lim", 0, 150000, 100)
+
+
+
+
+
+
+
+
+
+# ## Used to generate final data:
+# x = MeshNetwork(uniform_noice=10,
+#                 retransmit=3, network_conn_top="net_broken_snake", network_adj_top="net_3linkmax_broken")
+# x.internal_noise_disable(True)
+# # x.nodes_dict[0].uniform_noice = 50
+# x.nodes_dict[1].total_loss_chance = 90
+
+# x.buf_max_set(256)
+# x.gatt_dfu_initiate("net_broken_snake", 0, 150000, 1)
+
+
+
+# x = MeshNetwork(uniform_noice=10,
+#                 retransmit=1, network_conn_top="net_3linkmax_broken")
+# x.buf_max_set(256)
+# x.internal_noise_disable(False)
+# # x.nodes_dict[14].retransmit = 4
+
+# x.adv_dfu_initiate("net_3linkmax_broken", 0, 150000, 1)

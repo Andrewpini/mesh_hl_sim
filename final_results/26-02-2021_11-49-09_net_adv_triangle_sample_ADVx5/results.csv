@@ -1,0 +1,10 @@
+Origin node,Message count,Uniform Packet loss chance in %,Transmition per relay
+0,13637,10,5
+
+
+
+
+Node,Nr links,Nr adjacent node,Tot loss chance,Timestamp last msg,Packets recived,Packets lost,Packet loss %,Peak Buffer size
+0,2,2,10.0,1704625.0,13637.0,0.0,0.0,0
+1,2,2,0.0,1704525.0,13637.0,0.0,0.0,1
+2,2,2,10.0,1704527.0,13637.0,0.0,0.0,2

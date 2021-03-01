@@ -4,12 +4,12 @@ import csv
 from datetime import datetime
 
 TEST_RES_DIR = "test_results"
-ADV_RES_FILE_NAME ="adv_bearer_results.csv"
+ADV_RES_FILE_NAME ="results.csv"
 
 class TestResults(object):
 
-	def __init__(self):
-		self.date_string = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+	def __init__(self, test_name):
+		self.date_string = datetime.now().strftime("%d-%m-%Y_%H-%M-%S_{}".format(test_name))
 		self.dir_path = "{}/{}".format(TEST_RES_DIR, self.date_string)
 		self.csv_path = "./{}/{}".format(self.dir_path, ADV_RES_FILE_NAME)
 
