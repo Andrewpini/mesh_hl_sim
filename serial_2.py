@@ -1,64 +1,23 @@
 import serial
 import time
 import sys
-
-ser = serial.Serial()
-
-ser.baudrate = 115200
-ser.port = 'COM35'
-
-ser.open()
-# print(ser.is_open)
-# s = ser.read(1)
-# ser.close()
-# print(ser.is_open)
-# print(s)
-
-
-# ser.write(str.encode("cfg gatt_cfg_link_init 49152\r\n"))
-# ser.write(str.encode("cfg gatt_cfg_link_fetch 2\r\n"))
-# while True:
-# 	line =ser.readline()   # read a '\n' terminated line
-# 	print(line)
-
+import math
+import networkx as nx
+import matplotlib.pyplot as plt
 from PyQt5 import QtCore, QtGui, QtWidgets
 import socket
-# from ethernetmsg import *
+class CtrlPanelWidget(QtCore.QThread):
 
+	def __init__(self, MainWindow, parent=None):
+		super(CtrlPanelWidget, self).__init__(parent)
 
-class SerialReadThread(QtCore.QThread):
-	def __init__(self, parent=None):
-		super(SerialReadThread, self).__init__(parent)
+		self.connection_network = nx.Graph()
+		self.ser = serial.Serial()
+		self.ser.baudrate = 115200
+		self.ser.port = 'COM35'
+		self.ser.open()
 
-		# self.ser = serial.Serial()
-		# self.ser.baudrate = 115200
-		# self.ser.port = 'COM35'
-		# self.ser.open()
-
-		self.start()
-
-    #Thread
-	def run(self):
-		while True:
-			# print("asd")
-			line =ser.readline()   # read a '\n' terminated line
-			print(line)
-			pass
-
-# COMMENTED OUT UNTIL FURTHER NOTICE:
-asd = SerialReadThread()
-
-while True:
-	ser.write(str.encode("cfg gatt_cfg_link_init 49152\r\n"))
-	time.sleep(5)
-	ser.write(str.encode("cfg gatt_cfg_link_fetch 2\r\n"))
-	time.sleep(1)
-	pass
-
-
-class CtrlPanelWidget(object):
-
-	def __init__(self, MainWindow):
+		self.overview = {}
 
 		# --- Create main layout ---
 		MainWindow.resize(1000, 700)
@@ -71,7 +30,9 @@ class CtrlPanelWidget(object):
 		self.prompt_window.setLineWrapMode(QtWidgets.QTextEdit.NoWrap)
 
 		self.txt_input = QtWidgets.QLineEdit()
-		self.txt_input.editingFinished.connect(self.enterPress)
+		self.txt_input.editingFinished.connect(self.enter_pressed)
+		self.txt_input.textChanged.connect(self.text_changed)
+		self.text = str
 
 		# self.prompt_window.moveCursor(QtCore.QTextCursor.End)
 		# self.prompt_window.setCurrentFont(font)
@@ -98,18 +59,161 @@ class CtrlPanelWidget(object):
 		self.slider_layout.addWidget(self.txt_input)
 		self.plot_layout.addLayout(self.slider_layout)
 
+		self.start()
 
-	def enterPress(self):
-		print("Enter pressed")
+	def run(self):
+		while True:
+			# print("asd")
+			line = self.ser.readline()   # read a '\n' terminated line
+			# self.prompt_window.insertPlainText(str(line))
+			# self.prompt_window.insertPlainText(line.decode("utf-8"))
+			# sb = self.prompt_window.verticalScrollBar()
+			# sb.setValue(sb.maximum())
+
+			opcode = self.opcode_get(line.decode("utf-8"))
+			# print("Opcode is: {}".format(opcode))
+			if opcode == 1234:
+				self.link_map_handle(line.decode("utf-8"))
+
+			print(line)
+			# print(line.decode("utf-8"))
+			pass
+
+
+	def enter_pressed(self):
+		print("Enter pressed {}".format(self.text))
+		# self.ser.write(str.encode(self.text))
+		if self.text == "mesh":
+			self.create_edges()
+			return
+
+		self.ser.write(str.encode("{} \r\n".format(self.text)))
+		# self.ser.write(str.encode("cfg \r\n"))
+		# self.ser.write(str.encode("cfg gatt_cfg_link_init 49152\r\n"))
+
+	def text_changed(self, text):
+		self.text = text
+
+	def opcode_get(self, str_in):
+		try:
+			return int(str_in[:4])
+		except:
+			return 0
+
+	def link_map_handle(self, str_in):
+		res_list = []
+		li = list(str_in.split("-"))
+		# print(li)
+		li.pop(0)
+		li.pop()
+		# print(li)
+		root_addr = int(li.pop(0))
+
+		# for _ in range(int(math.ceil(len(li)) / 2)):
+		# 	addr = int(li.pop(0))
+		# 	cnt = int(li.pop(0))
+		# 	res_list.append([addr, cnt])
+		addr = int(li.pop(0))
+		cnt = int(li.pop(0))
+		res_list.append([addr, cnt])
+
+		# print("Root Addr: {}, Entries: {}".format(root_addr, res_list))
+		# print(type(self.overview[root_addr]))
+		# if self.overview[root_addr] is:
+		if root_addr not in self.overview:
+			self.overview[root_addr] = {}
+
+		self.overview[root_addr][addr] = cnt
+		print("Overview: {}".format(self.overview))
+
+
+	def create_edges(self):
+		for root_addr in self.overview:
+			self.connection_network.add_node(root_addr)
+
+
+		for root_addr, outer_addr in self.overview.items():
+			for inner_addr, cnt in outer_addr.items():
+				self.connection_network.add_edge(inner_addr, root_addr, color='r', weight=cnt)
+
+
+		plt.clf()
+		# nx.draw_spring(self.connection_network, with_labels=1)
+
+		pos=nx.spring_layout(self.connection_network) # pos = nx.nx_agraph.graphviz_layout(G)
+		# nx.draw_networkx(self.connection_network,pos)
+		colors = [self.connection_network[u][v]['color'] for u,v in self.connection_network.edges()]
+		nx.draw_networkx(self.connection_network, pos, edge_color=colors)
+		labels = nx.get_edge_attributes(self.connection_network,'weight')
+		nx.draw_networkx_edge_labels(self.connection_network,pos,edge_labels=labels)
+
+
+		# G = nx.Graph()
+		# G.add_edge(1,2,color='r',weight=2)
+		# G.add_edge(2,3,color='b',weight=4)
+		# G.add_edge(3,4,color='y',weight=6)
+
+		# pos = nx.circular_layout(G)
+
+		# edges = G.edges()
+		# colors = [G[u][v]['color'] for u,v in G.edges()]
+		# weights = [G[u][v]['weight'] for u,v in edges]
+
+		# plt.savefig("mesh.pdf", format="PDF")
+
+		plt.savefig("mesh.pdf", format="PDF")
+
+
+
 class Ui_main_widget(object):
 
 	def __init__(self, main_widget):
 		self.cpw = CtrlPanelWidget(main_widget)
 
-# if __name__ == "__main__":
-#     app = QtWidgets.QApplication(sys.argv)
-#     main_widget = QtWidgets.QMainWindow()
-#     ui = Ui_main_widget(main_widget)
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    main_widget = QtWidgets.QMainWindow()
+    ui = Ui_main_widget(main_widget)
 
-#     main_widget.show()
-#     sys.exit(app.exec_())
+    main_widget.show()
+    sys.exit(app.exec_())
+
+# G = nx.Graph()
+# G.add_edge(1,2,color='r',weight=2)
+# G.add_edge(2,3,color='b',weight=4)
+# G.add_edge(3,4,color='y',weight=6)
+
+# pos = nx.circular_layout(G)
+
+# # edges = G.edges()
+# colors = [G[u][v]['color'] for u,v in G.edges()]
+# # weights = [G[u][v]['weight'] for u,v in edges]
+
+# nx.draw_networkx(G, pos, edge_color=colors)
+# plt.savefig("mesh.pdf", format="PDF")
+
+# labels = nx.get_edge_attributes(self.connection_network,'weight')
+# nx.draw_networkx_edge_labels(self.connection_network,pos,edge_labels=labels)
+
+# G=nx.Graph()
+# i=1
+# G.add_node(i)
+# G.add_node(2)
+# G.add_node(3)
+# G.add_edge(1,2,weight=0.5)
+# G.add_edge(1,3,weight=9.8)
+# # pos=nx.get_node_attributes(G,'pos')
+# # pos=nx.spring_layout(G)
+# # # nx.draw(G,pos)
+# # nx.draw_spring(G, with_labels=1)
+
+# # labels = nx.get_edge_attributes(G,'weight')
+# # nx.draw_networkx_edge_labels(G,pos,edge_labels=labels)
+
+# pos=nx.spring_layout(G) # pos = nx.nx_agraph.graphviz_layout(G)
+# nx.draw_networkx(G,pos)
+# labels = nx.get_edge_attributes(G,'weight')
+# nx.draw_networkx_edge_labels(G,pos,edge_labels=labels)
+
+# plt.savefig("mesh.pdf", format="PDF")
+# # plt.savefig(<wherever>)
