@@ -6,6 +6,31 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from PyQt5 import QtCore, QtGui, QtWidgets
 import socket
+
+class SortedEdge(object):
+	def __init__(self, node_x, node_y, initial_cnt, expected_cnt):
+
+		self.node_x = node_x
+		self.node_y = node_y
+		self.received_cnt = initial_cnt
+		self.expected_cnt = expected_cnt
+		self.edge_quality = self.received_cnt / self.expected_cnt
+		self.edge_color = None
+		self.edge_color_set()
+
+	def edge_update(self, cnt):
+		self.received_cnt = (self.received_cnt + cnt) / 2
+		self.edge_quality = self.received_cnt / self.expected_cnt
+		self.edge_color_set()
+
+	def edge_color_set(self):
+		if self.received_cnt == self.expected_cnt:
+			self.edge_color = 'g'
+		elif self.received_cnt > (self.expected_cnt * 0.7):
+			self.edge_color = 'b'
+		else:
+			self.edge_color = 'r'
+
 class CtrlPanelWidget(QtCore.QThread):
 
 	def __init__(self, MainWindow, parent=None):
@@ -132,38 +157,40 @@ class CtrlPanelWidget(QtCore.QThread):
 			self.connection_network.add_node(root_addr)
 
 
-		for root_addr, outer_addr in self.overview.items():
-			for inner_addr, cnt in outer_addr.items():
-				self.connection_network.add_edge(inner_addr, root_addr, color='r', weight=cnt)
+		edges = self.edges_sort()
+
+		for key, val in edges.items():
+			self.connection_network.add_edge(val.node_x, val.node_y, color=val.edge_color, weight=val.edge_quality)
+
+		# for root_addr, outer_addr in self.overview.items():
+		# 	for inner_addr, cnt in outer_addr.items():
+		# 		self.connection_network.add_edge(inner_addr, root_addr, color='r', weight=cnt)
 
 
 		plt.clf()
-		# nx.draw_spring(self.connection_network, with_labels=1)
 
-		pos=nx.spring_layout(self.connection_network) # pos = nx.nx_agraph.graphviz_layout(G)
-		# nx.draw_networkx(self.connection_network,pos)
+		pos=nx.spring_layout(self.connection_network)
 		colors = [self.connection_network[u][v]['color'] for u,v in self.connection_network.edges()]
 		nx.draw_networkx(self.connection_network, pos, edge_color=colors)
 		labels = nx.get_edge_attributes(self.connection_network,'weight')
 		nx.draw_networkx_edge_labels(self.connection_network,pos,edge_labels=labels)
 
-
-		# G = nx.Graph()
-		# G.add_edge(1,2,color='r',weight=2)
-		# G.add_edge(2,3,color='b',weight=4)
-		# G.add_edge(3,4,color='y',weight=6)
-
-		# pos = nx.circular_layout(G)
-
-		# edges = G.edges()
-		# colors = [G[u][v]['color'] for u,v in G.edges()]
-		# weights = [G[u][v]['weight'] for u,v in edges]
-
-		# plt.savefig("mesh.pdf", format="PDF")
-
 		plt.savefig("mesh.pdf", format="PDF")
 
 
+	def edges_sort(self):
+		edge_dict = {}
+
+		for src_addr, ctx in self.overview.items():
+			for inner_addr, cnt in ctx.items():
+				id_list = [src_addr, inner_addr]
+				id_list.sort()
+
+				if str(id_list) not in edge_dict:
+					edge_dict[str(id_list)] = SortedEdge(src_addr, inner_addr, cnt, 10)
+				else:
+					edge_dict[str(id_list)].edge_update(cnt)
+		return edge_dict
 
 class Ui_main_widget(object):
 
@@ -217,3 +244,19 @@ if __name__ == "__main__":
 
 # plt.savefig("mesh.pdf", format="PDF")
 # # plt.savefig(<wherever>)
+
+
+# asd = [[1,2],[2,3],[3,4]]
+
+# zxc = [2,1]
+# qwe = zxc.sort
+
+# asdf = {"2,1" : "asd"}
+
+# asdf["2,1"] =123
+# asdf[str([2,1])] =123
+# print(asdf)
+
+# print(zxc)
+# if zxc in asd:
+# 	print("asdasd")
