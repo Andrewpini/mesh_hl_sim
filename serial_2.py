@@ -7,6 +7,10 @@ import matplotlib.pyplot as plt
 from PyQt5 import QtCore, QtGui, QtWidgets
 import socket
 
+SHELL_PROXY_INTERFACE_LINK_ENTRY = 6661
+SHELL_PROXY_INTERFACE_LINK_UPDATE_STARTED = 6662
+SHELL_PROXY_INTERFACE_LINK_UPDATE_ENDED = 6663
+
 class SortedEdge(object):
 	def __init__(self, node_x, node_y, initial_cnt, expected_cnt):
 
@@ -43,6 +47,8 @@ class CtrlPanelWidget(QtCore.QThread):
 		self.ser.open()
 
 		self.overview = {}
+		self.presence_list = []
+		self.retreive_list = []
 
 		# --- Create main layout ---
 		MainWindow.resize(1000, 700)
@@ -63,12 +69,12 @@ class CtrlPanelWidget(QtCore.QThread):
 		# self.prompt_window.setCurrentFont(font)
 		# self.prompt_window.setTextColor(color)
 
-		for item in range(100):
+		# for item in range(100):
 
-			self.prompt_window.insertPlainText("asd\n")
+		# 	self.prompt_window.insertPlainText("asd\n")
 
-		sb = self.prompt_window.verticalScrollBar()
-		sb.setValue(sb.maximum())
+		# sb = self.prompt_window.verticalScrollBar()
+		# sb.setValue(sb.maximum())
 
 
 		font = self.prompt_window.font()
@@ -97,8 +103,14 @@ class CtrlPanelWidget(QtCore.QThread):
 
 			opcode = self.opcode_get(line.decode("utf-8"))
 			# print("Opcode is: {}".format(opcode))
-			if opcode == 1234:
+			if opcode == SHELL_PROXY_INTERFACE_LINK_ENTRY:
 				self.link_map_handle(line.decode("utf-8"))
+			if opcode == SHELL_PROXY_INTERFACE_LINK_UPDATE_STARTED:
+				self.presence_handle(line.decode("utf-8"), self.presence_list)
+				print(self.presence_list)
+			if opcode == SHELL_PROXY_INTERFACE_LINK_UPDATE_ENDED:
+				self.presence_handle(line.decode("utf-8"), self.retreive_list)
+				print(self.retreive_list)
 
 			print(line)
 			# print(line.decode("utf-8"))
@@ -110,6 +122,10 @@ class CtrlPanelWidget(QtCore.QThread):
 		# self.ser.write(str.encode(self.text))
 		if self.text == "mesh":
 			self.create_edges()
+			return
+
+		if self.text == "map":
+			self.data_get()
 			return
 
 		self.ser.write(str.encode("{} \r\n".format(self.text)))
@@ -126,30 +142,41 @@ class CtrlPanelWidget(QtCore.QThread):
 			return 0
 
 	def link_map_handle(self, str_in):
-		res_list = []
+
 		li = list(str_in.split("-"))
-		# print(li)
 		li.pop(0)
 		li.pop()
-		# print(li)
-		root_addr = int(li.pop(0))
 
-		# for _ in range(int(math.ceil(len(li)) / 2)):
-		# 	addr = int(li.pop(0))
-		# 	cnt = int(li.pop(0))
-		# 	res_list.append([addr, cnt])
+		root_addr = int(li.pop(0))
 		addr = int(li.pop(0))
 		cnt = int(li.pop(0))
-		res_list.append([addr, cnt])
 
-		# print("Root Addr: {}, Entries: {}".format(root_addr, res_list))
-		# print(type(self.overview[root_addr]))
-		# if self.overview[root_addr] is:
 		if root_addr not in self.overview:
 			self.overview[root_addr] = {}
 
 		self.overview[root_addr][addr] = cnt
 		print("Overview: {}".format(self.overview))
+
+	def presence_handle(self, str_in, list_in):
+		li = list(str_in.split("-"))
+		li.pop(0)
+		li.pop()
+		# root_addr = int(li.pop(0))
+
+		list_in.append(int(li.pop(0)))
+		# addr = int(li.pop(0))
+
+		# if root_addr not in self.overview:
+		# 	self.overview[root_addr] = {}
+
+		# self.overview[root_addr][addr] = cnt
+		# print("Overview: {}".format(self.overview))
+
+
+	def data_get(self):
+		for i in self.retreive_list:
+			self.ser.write(str.encode("cfg link_fetch {} \r\n".format(i)))
+			time.sleep(0.5)
 
 
 	def create_edges(self):
