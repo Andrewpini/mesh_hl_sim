@@ -10,6 +10,7 @@ import socket
 SHELL_PROXY_INTERFACE_LINK_ENTRY = 6661
 SHELL_PROXY_INTERFACE_LINK_UPDATE_STARTED = 6662
 SHELL_PROXY_INTERFACE_LINK_UPDATE_ENDED = 6663
+SHELL_PROXY_INTERFACE_LINK_CNT = 6664
 
 class SortedEdge(object):
 	def __init__(self, node_x, node_y, initial_cnt, expected_cnt):
@@ -49,6 +50,7 @@ class CtrlPanelWidget(QtCore.QThread):
 		self.overview = {}
 		self.presence_list = []
 		self.retreive_list = []
+		self.link_msg_cnt = 0
 
 		# --- Create main layout ---
 		MainWindow.resize(1000, 700)
@@ -107,30 +109,40 @@ class CtrlPanelWidget(QtCore.QThread):
 				self.link_map_handle(line.decode("utf-8"))
 			if opcode == SHELL_PROXY_INTERFACE_LINK_UPDATE_STARTED:
 				self.presence_handle(line.decode("utf-8"), self.presence_list)
-				print(self.presence_list)
 			if opcode == SHELL_PROXY_INTERFACE_LINK_UPDATE_ENDED:
 				self.presence_handle(line.decode("utf-8"), self.retreive_list)
-				print(self.retreive_list)
 
-			print(line)
-			# print(line.decode("utf-8"))
+				if len(self.presence_list) == len(self.retreive_list):
+					if sorted(self.presence_list) == sorted(self.retreive_list):
+						self.data_get()
+						self.create_edges()
+
+			if opcode == SHELL_PROXY_INTERFACE_LINK_CNT:
+				li = list(line.decode("utf-8").split("-"))
+				self.link_msg_cnt = int(li.pop(1))
+				self.retreive_list = []
+				self.presence_list = []
+				print(self.link_msg_cnt)
+
+
+			# print(line)
+			print(line.decode("utf-8"))
 			pass
 
 
 	def enter_pressed(self):
 		print("Enter pressed {}".format(self.text))
-		# self.ser.write(str.encode(self.text))
 		if self.text == "mesh":
 			self.create_edges()
 			return
 
 		if self.text == "map":
 			self.data_get()
+			self.create_edges()
 			return
 
 		self.ser.write(str.encode("{} \r\n".format(self.text)))
-		# self.ser.write(str.encode("cfg \r\n"))
-		# self.ser.write(str.encode("cfg gatt_cfg_link_init 49152\r\n"))
+
 
 	def text_changed(self, text):
 		self.text = text
@@ -161,23 +173,13 @@ class CtrlPanelWidget(QtCore.QThread):
 		li = list(str_in.split("-"))
 		li.pop(0)
 		li.pop()
-		# root_addr = int(li.pop(0))
-
 		list_in.append(int(li.pop(0)))
-		# addr = int(li.pop(0))
-
-		# if root_addr not in self.overview:
-		# 	self.overview[root_addr] = {}
-
-		# self.overview[root_addr][addr] = cnt
-		# print("Overview: {}".format(self.overview))
-
 
 	def data_get(self):
 		for i in self.retreive_list:
 			self.ser.write(str.encode("cfg link_fetch {} \r\n".format(i)))
 			time.sleep(0.5)
-
+		time.sleep(1)
 
 	def create_edges(self):
 		for root_addr in self.overview:
@@ -188,11 +190,6 @@ class CtrlPanelWidget(QtCore.QThread):
 
 		for key, val in edges.items():
 			self.connection_network.add_edge(val.node_x, val.node_y, color=val.edge_color, weight=val.edge_quality)
-
-		# for root_addr, outer_addr in self.overview.items():
-		# 	for inner_addr, cnt in outer_addr.items():
-		# 		self.connection_network.add_edge(inner_addr, root_addr, color='r', weight=cnt)
-
 
 		plt.clf()
 
@@ -214,7 +211,7 @@ class CtrlPanelWidget(QtCore.QThread):
 				id_list.sort()
 
 				if str(id_list) not in edge_dict:
-					edge_dict[str(id_list)] = SortedEdge(src_addr, inner_addr, cnt, 10)
+					edge_dict[str(id_list)] = SortedEdge(src_addr, inner_addr, cnt, self.link_msg_cnt)
 				else:
 					edge_dict[str(id_list)].edge_update(cnt)
 		return edge_dict
@@ -231,59 +228,3 @@ if __name__ == "__main__":
 
     main_widget.show()
     sys.exit(app.exec_())
-
-# G = nx.Graph()
-# G.add_edge(1,2,color='r',weight=2)
-# G.add_edge(2,3,color='b',weight=4)
-# G.add_edge(3,4,color='y',weight=6)
-
-# pos = nx.circular_layout(G)
-
-# # edges = G.edges()
-# colors = [G[u][v]['color'] for u,v in G.edges()]
-# # weights = [G[u][v]['weight'] for u,v in edges]
-
-# nx.draw_networkx(G, pos, edge_color=colors)
-# plt.savefig("mesh.pdf", format="PDF")
-
-# labels = nx.get_edge_attributes(self.connection_network,'weight')
-# nx.draw_networkx_edge_labels(self.connection_network,pos,edge_labels=labels)
-
-# G=nx.Graph()
-# i=1
-# G.add_node(i)
-# G.add_node(2)
-# G.add_node(3)
-# G.add_edge(1,2,weight=0.5)
-# G.add_edge(1,3,weight=9.8)
-# # pos=nx.get_node_attributes(G,'pos')
-# # pos=nx.spring_layout(G)
-# # # nx.draw(G,pos)
-# # nx.draw_spring(G, with_labels=1)
-
-# # labels = nx.get_edge_attributes(G,'weight')
-# # nx.draw_networkx_edge_labels(G,pos,edge_labels=labels)
-
-# pos=nx.spring_layout(G) # pos = nx.nx_agraph.graphviz_layout(G)
-# nx.draw_networkx(G,pos)
-# labels = nx.get_edge_attributes(G,'weight')
-# nx.draw_networkx_edge_labels(G,pos,edge_labels=labels)
-
-# plt.savefig("mesh.pdf", format="PDF")
-# # plt.savefig(<wherever>)
-
-
-# asd = [[1,2],[2,3],[3,4]]
-
-# zxc = [2,1]
-# qwe = zxc.sort
-
-# asdf = {"2,1" : "asd"}
-
-# asdf["2,1"] =123
-# asdf[str([2,1])] =123
-# print(asdf)
-
-# print(zxc)
-# if zxc in asd:
-# 	print("asdasd")
