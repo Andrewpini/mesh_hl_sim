@@ -11,7 +11,7 @@ SHELL_PROXY_INTERFACE_LINK_ENTRY = 6661
 SHELL_PROXY_INTERFACE_LINK_UPDATE_STARTED = 6662
 SHELL_PROXY_INTERFACE_LINK_UPDATE_ENDED = 6663
 SHELL_PROXY_INTERFACE_LINK_CNT = 6664
-
+SHELL_PROXY_INTERFACE_LINK_ENTRY_STATUS = 6665
 class SortedEdge(object):
 	def __init__(self, node_x, node_y, initial_cnt, expected_cnt):
 
@@ -29,9 +29,9 @@ class SortedEdge(object):
 		self.edge_color_set()
 
 	def edge_color_set(self):
-		if self.received_cnt == self.expected_cnt:
+		if self.received_cnt >= (self.expected_cnt * 0.95):
 			self.edge_color = 'g'
-		elif self.received_cnt > (self.expected_cnt * 0.7):
+		elif self.received_cnt >= (self.expected_cnt * 0.75):
 			self.edge_color = 'b'
 		else:
 			self.edge_color = 'r'
@@ -44,7 +44,7 @@ class CtrlPanelWidget(QtCore.QThread):
 		self.connection_network = nx.Graph()
 		self.ser = serial.Serial()
 		self.ser.baudrate = 115200
-		self.ser.port = 'COM35'
+		self.ser.port = 'COM30'
 		self.ser.open()
 
 		self.overview = {}
@@ -105,25 +105,37 @@ class CtrlPanelWidget(QtCore.QThread):
 
 			opcode = self.opcode_get(line.decode("utf-8"))
 			# print("Opcode is: {}".format(opcode))
-			if opcode == SHELL_PROXY_INTERFACE_LINK_ENTRY:
-				self.link_map_handle(line.decode("utf-8"))
-			if opcode == SHELL_PROXY_INTERFACE_LINK_UPDATE_STARTED:
-				self.presence_handle(line.decode("utf-8"), self.presence_list)
-			if opcode == SHELL_PROXY_INTERFACE_LINK_UPDATE_ENDED:
-				self.presence_handle(line.decode("utf-8"), self.retreive_list)
-
-				if len(self.presence_list) == len(self.retreive_list):
-					if sorted(self.presence_list) == sorted(self.retreive_list):
-						self.data_get()
-						self.create_edges()
 
 			if opcode == SHELL_PROXY_INTERFACE_LINK_CNT:
 				li = list(line.decode("utf-8").split("-"))
 				self.link_msg_cnt = int(li.pop(1))
 				self.retreive_list = []
 				self.presence_list = []
+				self.overview = {}
+				self.connection_network = nx.Graph()
 				print(self.link_msg_cnt)
 
+			if opcode == SHELL_PROXY_INTERFACE_LINK_UPDATE_STARTED:
+				self.presence_handle(line.decode("utf-8"), self.presence_list)
+
+			if opcode == SHELL_PROXY_INTERFACE_LINK_UPDATE_ENDED:
+				self.presence_handle(line.decode("utf-8"), self.retreive_list)
+
+				if len(self.presence_list) == len(self.retreive_list):
+					if sorted(self.presence_list) == sorted(self.retreive_list):
+						self.data_get()
+						# self.create_edges()
+
+			if opcode == SHELL_PROXY_INTERFACE_LINK_ENTRY:
+				self.link_map_handle(line.decode("utf-8"))
+
+			if opcode == SHELL_PROXY_INTERFACE_LINK_ENTRY_STATUS:
+				li = list(line.decode("utf-8").split("-"))
+				status = int(li.pop(1))
+				print("STATUS: {}".format(status))
+				if status:
+					self.retreive_list.pop(0)
+				self.data_get()
 
 			# print(line)
 			print(line.decode("utf-8"))
@@ -176,10 +188,10 @@ class CtrlPanelWidget(QtCore.QThread):
 		list_in.append(int(li.pop(0)))
 
 	def data_get(self):
-		for i in self.retreive_list:
-			self.ser.write(str.encode("cfg link_fetch {} \r\n".format(i)))
-			time.sleep(0.5)
-		time.sleep(1)
+		try:
+			self.ser.write(str.encode("cfg link_fetch {} \r\n".format(self.retreive_list[0])))
+		except :
+			self.create_edges()
 
 	def create_edges(self):
 		for root_addr in self.overview:

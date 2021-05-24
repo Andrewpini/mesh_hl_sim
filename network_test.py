@@ -97,19 +97,6 @@ class GattMsg(object):
 
 
 class MeshNode(object):
-	# 4.2.2.7 Publish Retransmit Interval Steps: Minimum 50ms
-	# 4.2.19.2 Network Transmit Interval Steps: Minimum random 0-10ms
-	# 4.2.20.2 Relay Retransmit Interval Steps: Minimum 10ms
-
-	# Mulig Network Transmit Interval og Relay Retransmit Interval kan nulles ut siden den ene gjelder GATT og den andre ADV Bearer
-
-	# Selvstøy bør simuleres. Slik det er per nå så får man ingen penalty for selvstøy, noe som innebærer at man alltid får bedre performance ved økt antall links/repeats.
-
-	# Tanke: I GATT solution trenger man ikke nødvendigvis å bruke alle tilgjengelige linker. Kan lage en "GATT-snake". Latency i DFU-sammenheng er ikke så interesant, bare throughput
-
-	# Antallet linker i simulert nettverk trenger/bør ikke være mer en 3 per node.
-
-	# Simulering av GATT connections kan gjøres på følgende måte: Kjør simulering med 7.5-20 ms intervall Conn interval (helst 20?). Dette vil representere tiden det tar å forsøke å overføre en pakke over en GATT connection. På hver link så legger man til et interval per forsøk på å overføre pakken. Så snart overføringen er fullført så går man til neste connection inntil man har gått gjennom alle. For å forenkle prosessen ser vi bort fra tiden det tar med ctx switch mellom de ulike connectionene.
 
 	def __init__(self, name, uniform_noice, retransmit):
 		self.name = name
@@ -277,7 +264,6 @@ class MeshNode(object):
 				# print(j.receiver_list)
 				ret = j.msg_fetch(node.name)
 				if ret:
-					# print("asdasd")
 					res = node.gatt_msg_receive2(j.tid, time, self.name)
 					if res:
 
@@ -537,139 +523,8 @@ class MeshNetwork(object):
 				self.nodes_dict[i].total_loss_chance = eval(item)
 				i += 1
 
-
-# a = MeshNode(0, 0, 1)
-# b.add_connected_node(a)
-# x.load_noice_csv("nice_test")
-
-## Used to generate final data:
-# for i in range(1, 5 + 1):
-# 	x = MeshNetwork(uniform_noice=10,
-# 			retransmit=i, network_conn_top="net_3linkmax")
-# 	x.buf_max_set(64)
-# 	x.adv_dfu_initiate("net_3linkmax", 0, 150000, 100)
-
-# # Used to generate final data:
-# x = MeshNetwork(uniform_noice=10,
-# 		retransmit=1, network_conn_top="net_3linkmax")
-# x.buf_max_set(8)
-# x.gatt_dfu_initiate("RE_net_3linkmax_buf8", 0, 150000, 100)
-
-# Used to generate final data:
-# x = MeshNetwork(uniform_noice=10,
-                # retransmit=4, network_conn_top="net_3linkmax_broken")
-# x.buf_max_set(8)
-# x.adv_dfu_initiate("net_3linkmax_broken", 0, 150000, 100)
-# x.gatt_dfu_initiate("RE_net_3linkmax_broken_buf8", 0, 150000, 100)
-
-## Used to generate final data:
-# x = MeshNetwork(uniform_noice=10,
-#                 retransmit=3, network_conn_top="net_broken_tree", network_adj_top="net_3linkmax_broken")
-# x.buf_max_set(8)
-# x.gatt_dfu_initiate("RE_net_broken_tree_buf256", 0, 150000, 100)
-
 # ## Used to generate final data:
 x = MeshNetwork(uniform_noice=10,
                 retransmit=3, network_conn_top="net_broken_snake", network_adj_top="net_3linkmax_broken")
 x.buf_max_set(8)
 x.gatt_dfu_initiate("net_broken_snake", 0, 150000, 100)
-
-# ## Used to generate final data:
-# for i in range(1, 7 + 1):
-# 	x = MeshNetwork(uniform_noice=10,
-# 			retransmit=i, network_conn_top="net_adv_chain_sample")
-# 	x.buf_max_set(16)
-# 	x.internal_noise_disable(True)
-# 	x.adv_dfu_initiate("net_adv_chain_sample", 0, 150000, 100)
-
-# ## Used to generate final data:
-# x = MeshNetwork(uniform_noice=10,
-#                 retransmit=4, network_conn_top="net_3linkmax_broken")
-# x.buf_max_set(64)
-# x.internal_noise_disable(False)
-# x.adv_dfu_initiate("net_3linkmax_broken", 12, 150000, 1000)
-
-# ## Used to generate final data:
-# for i in range(1, 7 + 1):
-# 	x = MeshNetwork(uniform_noice=10,
-# 			retransmit=i, network_conn_top="net_adv_triangle_sample")
-# 	x.buf_max_set(16)
-# 	x.internal_noise_disable(True)
-# 	x.nodes_dict[1].uniform_noice = 0
-# 	x.nodes_dict[1].total_loss_chance = 0
-# 	x.adv_dfu_initiate("net_adv_triangle_sample", 0, 150000, 100)
-
-# ## Used to generate final data:
-# x = MeshNetwork(uniform_noice=10,
-#                 retransmit=3, network_conn_top="net_broken_tree", network_adj_top="net_3linkmax_broken")
-# x.internal_noise_disable(True)
-# x.buf_max_set(256)
-# x.gatt_dfu_initiate("net_broken_tree_no_buf_lim", 0, 150000, 100)
-
-
-# ## Used to generate final data:
-# x = MeshNetwork(uniform_noice=10,
-#                 retransmit=3, network_conn_top="net_broken_snake", network_adj_top="net_3linkmax_broken")
-# x.internal_noise_disable(True)
-# # x.nodes_dict[0].uniform_noice = 50
-# x.nodes_dict[1].total_loss_chance = 90
-
-# x.buf_max_set(256)
-# x.gatt_dfu_initiate("net_broken_snake", 0, 150000, 1)
-
-
-# x = MeshNetwork(uniform_noice=10,
-#                 retransmit=1, network_conn_top="net_3linkmax_broken")
-# x.buf_max_set(256)
-# x.internal_noise_disable(False)
-# # x.nodes_dict[14].retransmit = 4
-
-# x.adv_dfu_initiate("net_3linkmax_broken", 0, 150000, 1)
-
-
-
-
-
-
-
-
-
-
-# x = MeshNetwork(uniform_noice=10,
-#                 retransmit=3, network_conn_top="net_3linkmax_broken", network_adj_top="net_3linkmax_broken")
-# # x.internal_noise_disable(True)
-# x.buf_max_set(8)
-# x.gatt_dfu_initiate("test_del", 0, 150000, 1)
-
-
-
-
-
-
-
-# Anders = MeshNode(0,0,1)
-# John = MeshNode(1,0,1)
-# Sivert = MeshNode(2,0,1)
-
-# a = GattMsg(Anders,1, [John,Anders])
-# b = GattMsg(Anders,2, [John,Sivert,Anders])
-
-# Anders.add_connected_node(John)
-# Anders.add_connected_node(Sivert)
-# print(John.connected_nodes, 123557)
-
-# # Anders.adv_queue.append(a)
-# Anders.adv_queue.append(b)
-
-# print(Anders.adv_queue)
-# Anders.gatt_msg_send2(20)
-# print(John.incoming_msg_queue)
-# print(Sivert.incoming_msg_queue)
-# print(Anders.adv_queue)
-
-# print(Sivert.adv_queue)
-
-# Sivert.gatt_queue_update()
-# print(Sivert.adv_queue)
-
-# Sivert.gatt_msg_send2(40)
